@@ -35,7 +35,7 @@ module.exports = async (req, res) => {
   }
 
   const body = await parseBody(req);
-  const amountINR = Number(body.amountINR) || 1;
+  const amountINR = Number(body.amountINR) || 199;
   const amountPaise = Math.round(amountINR * 100);
 
   function isRealKey(val) {

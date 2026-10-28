@@ -401,9 +401,8 @@ function initRegistrationForms() {
 // PAYMENT CONFIGURATION (TEST MODE: ₹0 | PRODUCTION MODE: ₹199)
 // ==========================================================================
 const PAYMENT_CONFIG = {
-  // SET TO 1 FOR TESTING (Charges ₹1 via Razorpay test/live gateway)
-  // CHANGE TO 199 FOR LIVE PRODUCTION (Charges ₹199 via Razorpay)
-  amountINR: 1,
+  // SET TO 199 FOR LIVE PRODUCTION (Charges ₹199 via Razorpay)
+  amountINR: 199,
   originalPriceINR: 499,
 
   // Razorpay Gateway Settings (Active when amountINR > 0)
@@ -827,7 +826,7 @@ async function handleFormSubmission(form) {
 
   const options = {
     key: PAYMENT_CONFIG.key,
-    amount: PAYMENT_CONFIG.amountINR * 100, // paise (e.g. 1 * 100 = 100 paise)
+    amount: PAYMENT_CONFIG.amountINR * 100, // paise (e.g. 199 * 100 = 19900 paise)
     currency: PAYMENT_CONFIG.currency,
     name: PAYMENT_CONFIG.name,
     description: PAYMENT_CONFIG.description,
