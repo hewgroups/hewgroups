@@ -401,13 +401,13 @@ function initRegistrationForms() {
 // PAYMENT CONFIGURATION (TEST MODE: ₹0 | PRODUCTION MODE: ₹199)
 // ==========================================================================
 const PAYMENT_CONFIG = {
-  // SET TO 0 FOR TESTING (Instant zero-cost test flow, bypasses gateway, dispatches EmailJS automation)
+  // SET TO 1 FOR TESTING (Charges ₹1 via Razorpay test/live gateway)
   // CHANGE TO 199 FOR LIVE PRODUCTION (Charges ₹199 via Razorpay)
-  amountINR: 0, 
+  amountINR: 1, 
   originalPriceINR: 499,
 
   // Razorpay Gateway Settings (Active when amountINR > 0)
-  key: 'rzp_live_TrmHqpHyg2ZHZJ', // Razorpay Live Key ID
+  key: (typeof window !== 'undefined' && window.__ENV && window.__ENV.RAZORPAY_KEY_ID) || 'rzp_live_TrmHqpHyg2ZHZJ',
   currency: 'INR',
   name: 'HEW Groups',
   description: 'Batch #1 Live Transformation Masterclass + Document Kit',
@@ -421,10 +421,10 @@ const PAYMENT_CONFIG = {
 // EMAILJS AUTOMATION CONFIGURATION (MASTERCLASS DOCUMENT DELIVERY)
 // ==========================================================================
 const EMAILJS_CONFIG = {
-  // Replace these with your EmailJS credentials from https://www.emailjs.com/
-  publicKey: 'YOUR_EMAILJS_PUBLIC_KEY',   // e.g. "AbCdEf123456"
-  serviceId: 'YOUR_EMAILJS_SERVICE_ID',   // e.g. "service_hew"
-  templateId: 'YOUR_EMAILJS_TEMPLATE_ID', // e.g. "template_masterclass"
+  // Configured with your live credentials & dynamic environment overrides
+  publicKey: (typeof window !== 'undefined' && window.__ENV && window.__ENV.EMAILJS_PUBLIC_KEY) || 'ADLPcbBYvbEWCitDI',
+  serviceId: (typeof window !== 'undefined' && window.__ENV && window.__ENV.EMAILJS_SERVICE_ID) || 'service_g9bl4go',
+  templateId: (typeof window !== 'undefined' && window.__ENV && window.__ENV.EMAILJS_TEMPLATE_ID) || 'template_bz2ad5p',
 
   // Masterclass Document located in the masterclass folder
   masterclassDocRelativeUrl: 'masterclass/HEW_Groups_Premium_Guide_With_Founder_Photos.pdf',
@@ -434,11 +434,95 @@ const EMAILJS_CONFIG = {
   whatsappGroupUrl: 'https://chat.whatsapp.com/DXSQDaEwfrL6Bk8y1jYKWm?s=cl&p=i&ilr=4&iam=0'
 };
 
-function getMasterclassDocumentUrl() {
-  const origin = window.location.origin || '';
-  const pathname = window.location.pathname || '';
-  const basePath = pathname.substring(0, pathname.lastIndexOf('/') + 1);
-  return `${origin}${basePath}${EMAILJS_CONFIG.masterclassDocRelativeUrl}`;
+function applyAppConfig(env) {
+  if (!env || typeof env !== 'object') return;
+  const clean = (val) => (typeof val === 'string' ? val.trim().replace(/^['"]|['"]$/g, '') : '');
+
+  const rzpKey = clean(env.RAZORPAY_KEY_ID);
+  if (rzpKey && !rzpKey.includes('YOUR_')) {
+    PAYMENT_CONFIG.key = rzpKey;
+  }
+  const pubKey = clean(env.EMAILJS_PUBLIC_KEY);
+  if (pubKey && !pubKey.includes('YOUR_')) {
+    EMAILJS_CONFIG.publicKey = pubKey;
+  }
+  const srvId = clean(env.EMAILJS_SERVICE_ID);
+  if (srvId && !srvId.includes('YOUR_')) {
+    EMAILJS_CONFIG.serviceId = srvId;
+  }
+  const tmplId = clean(env.EMAILJS_TEMPLATE_ID);
+  if (tmplId && !tmplId.includes('YOUR_')) {
+    EMAILJS_CONFIG.templateId = tmplId;
+  }
+}
+
+// Global environment resolution promise
+const envReadyPromise = (async function loadEnvironmentConfig() {
+  // 1. If window.__ENV already exists (from js/env-config.js or js/env.js), apply immediately
+  if (window.__ENV) {
+    applyAppConfig(window.__ENV);
+  }
+
+  // 2. If running locally (localhost / 127.0.0.1 / file:), load gitignored js/env.js
+  const isLocalEnv =
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.protocol === 'file:';
+
+  if (isLocalEnv && (!window.__ENV || !window.__ENV.EMAILJS_PUBLIC_KEY)) {
+    await new Promise((resolve) => {
+      const script = document.createElement('script');
+      script.src = 'js/env.js';
+      script.onload = () => {
+        if (window.__ENV) applyAppConfig(window.__ENV);
+        resolve();
+      };
+      script.onerror = () => resolve();
+      document.head.appendChild(script);
+    });
+  }
+
+  // 3. When deployed on Vercel or server, fetch environment variables from /api/config serverless function
+  if (window.location.protocol.startsWith('http')) {
+    try {
+      const res = await fetch('/api/config');
+      if (res.ok) {
+        const remoteEnv = await res.json();
+        applyAppConfig(remoteEnv);
+      }
+    } catch (e) {
+      // Offline or local static server without serverless backend
+    }
+  }
+})();
+
+function getMasterclassDocumentUrl(forEmail = false) {
+  const relativeUrl = EMAILJS_CONFIG.masterclassDocRelativeUrl || 'masterclass/HEW_Groups_Premium_Guide_With_Founder_Photos.pdf';
+
+  // 1. For in-browser modal: direct relative URL works locally on file://, localhost, and live domains
+  if (!forEmail) {
+    return relativeUrl;
+  }
+
+  // 2. For outbound email delivery:
+  const origin = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : '';
+  const isLocal =
+    !origin ||
+    origin === 'null' ||
+    origin.includes('localhost') ||
+    origin.includes('127.0.0.1') ||
+    (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:');
+
+  // If live on Vercel or custom domain
+  if (!isLocal) {
+    const pathname = window.location.pathname || '';
+    const basePath = pathname.substring(0, pathname.lastIndexOf('/') + 1);
+    return `${origin}${basePath}${relativeUrl}`;
+  }
+
+  // When testing locally (localhost / 127.0.0.1 / file:):
+  // Provide verified public raw link so emails opened on any device (phone, laptop) download the PDF immediately
+  return 'https://github.com/hewgroups/hewgroups/raw/main/masterclass/HEW_Groups_Premium_Guide_With_Founder_Photos.pdf';
 }
 
 function ensureRazorpayLoaded() {
@@ -455,15 +539,10 @@ function ensureRazorpayLoaded() {
   });
 }
 
-function ensureEmailJSLoaded() {
+async function ensureEmailJSLoaded() {
+  await envReadyPromise;
   return new Promise((resolve) => {
-    if (window.emailjs) {
-      resolve(true);
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js';
-    script.onload = () => {
+    function initSdk() {
       if (window.emailjs && EMAILJS_CONFIG.publicKey && !EMAILJS_CONFIG.publicKey.includes('YOUR_')) {
         try {
           window.emailjs.init({ publicKey: EMAILJS_CONFIG.publicKey });
@@ -472,7 +551,15 @@ function ensureEmailJSLoaded() {
         }
       }
       resolve(true);
-    };
+    }
+
+    if (window.emailjs) {
+      initSdk();
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js';
+    script.onload = () => initSdk();
     script.onerror = () => {
       console.warn('[HEW Groups] EmailJS CDN load failed.');
       resolve(false);
@@ -484,18 +571,58 @@ function ensureEmailJSLoaded() {
 async function sendMasterclassEmail(data) {
   await ensureEmailJSLoaded();
 
-  const docUrl = getMasterclassDocumentUrl();
+  // If credentials are still missing, try re-syncing from window.__ENV or /api/config
+  let isConfigured =
+    window.emailjs &&
+    EMAILJS_CONFIG.publicKey && !EMAILJS_CONFIG.publicKey.includes('YOUR_') &&
+    EMAILJS_CONFIG.serviceId && !EMAILJS_CONFIG.serviceId.includes('YOUR_') &&
+    EMAILJS_CONFIG.templateId && !EMAILJS_CONFIG.templateId.includes('YOUR_');
+
+  if (!isConfigured) {
+    if (window.__ENV) applyAppConfig(window.__ENV);
+    if (window.location.protocol.startsWith('http')) {
+      try {
+        const res = await fetch('/api/config');
+        if (res.ok) {
+          const remote = await res.json();
+          applyAppConfig(remote);
+        }
+      } catch (e) { }
+    }
+    isConfigured =
+      window.emailjs &&
+      EMAILJS_CONFIG.publicKey && !EMAILJS_CONFIG.publicKey.includes('YOUR_') &&
+      EMAILJS_CONFIG.serviceId && !EMAILJS_CONFIG.serviceId.includes('YOUR_') &&
+      EMAILJS_CONFIG.templateId && !EMAILJS_CONFIG.templateId.includes('YOUR_');
+  }
+
+  const docUrl = getMasterclassDocumentUrl(true);
   const templateParams = {
-    to_name: data.name,
-    to_email: data.email,
+    // Recipient Identification (matches any template variable style)
+    name: data.name,
     user_name: data.name,
+    to_name: data.name,
+    recipient_name: data.name,
+
+    email: data.email,
     user_email: data.email,
+    to_email: data.email,
+    recipient_email: data.email,
+    reply_to: data.email,
+
     phone: data.phone,
     user_phone: data.phone,
+    whatsapp_number: data.phone,
+
+    focus: data.focus,
     focus_area: data.focus,
     ticket_id: data.ticketId,
+    ticketId: data.ticketId,
     payment_id: data.paymentId,
+    paymentId: data.paymentId,
     amount_paid: data.amountPaid,
+    amountPaid: data.amountPaid,
+
     masterclass_title: 'HEW Groups - Health, Education & Wealth Masterclass',
     document_name: EMAILJS_CONFIG.masterclassDocName,
     document_url: docUrl,
@@ -505,35 +632,53 @@ async function sendMasterclassEmail(data) {
     session_timing: 'Batch #1 Live Orientation · Sunday 11:00 AM IST'
   };
 
-  const isConfigured =
-    window.emailjs &&
-    EMAILJS_CONFIG.publicKey && !EMAILJS_CONFIG.publicKey.includes('YOUR_') &&
-    EMAILJS_CONFIG.serviceId && !EMAILJS_CONFIG.serviceId.includes('YOUR_') &&
-    EMAILJS_CONFIG.templateId && !EMAILJS_CONFIG.templateId.includes('YOUR_');
-
   if (!isConfigured) {
-    console.group('%c[HEW Groups] 📩 Automated Masterclass Email Prepared', 'color: #096410; font-weight: bold;');
-    console.info('Masterclass automated confirmation email with PDF guide is ready to send via EmailJS!');
-    console.info('To deliver live emails to real inboxes, update EMAILJS_CONFIG in js/main.js with your EmailJS credentials:');
-    console.info('  - publicKey');
-    console.info('  - serviceId');
-    console.info('  - templateId');
-    console.info('Email Payload ready to send:', templateParams);
+    console.group('%c[HEW Groups] ⚠️ EmailJS Configuration Notice', 'color: #d97706; font-weight: bold;');
+    console.warn('EmailJS keys are missing or unconfigured.');
+    console.warn('Set environment variables in Vercel or local .env: EMAILJS_PUBLIC_KEY, EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID.');
+    console.info('Current Config Values:', {
+      publicKey: EMAILJS_CONFIG.publicKey || '(empty)',
+      serviceId: EMAILJS_CONFIG.serviceId || '(empty)',
+      templateId: EMAILJS_CONFIG.templateId || '(empty)'
+    });
+    console.info('Prepared Email Payload:', templateParams);
     console.groupEnd();
-    return { success: true, simulated: true, payload: templateParams };
+    return { success: false, unconfigured: true, payload: templateParams };
   }
 
   try {
-    const response = await window.emailjs.send(
-      EMAILJS_CONFIG.serviceId,
-      EMAILJS_CONFIG.templateId,
-      templateParams,
-      EMAILJS_CONFIG.publicKey
-    );
-    console.log('[HEW Groups] Automation email successfully sent to', data.email, response);
+    // 1. Initialize EmailJS instance
+    if (window.emailjs && window.emailjs.init) {
+      try {
+        window.emailjs.init({ publicKey: EMAILJS_CONFIG.publicKey });
+      } catch (e) {
+        try { window.emailjs.init(EMAILJS_CONFIG.publicKey); } catch (e2) { }
+      }
+    }
+
+    // 2. Dispatch with dual v4/v3 compatibility
+    let response;
+    try {
+      response = await window.emailjs.send(
+        EMAILJS_CONFIG.serviceId,
+        EMAILJS_CONFIG.templateId,
+        templateParams,
+        { publicKey: EMAILJS_CONFIG.publicKey }
+      );
+    } catch (sendErr) {
+      // Fallback: try with plain string public key if SDK build prefers it
+      response = await window.emailjs.send(
+        EMAILJS_CONFIG.serviceId,
+        EMAILJS_CONFIG.templateId,
+        templateParams,
+        EMAILJS_CONFIG.publicKey
+      );
+    }
+
+    console.log('[HEW Groups] ✅ Masterclass welcome email sent successfully:', response);
     return { success: true, response };
   } catch (err) {
-    console.error('[HEW Groups] Failed to send automation email via EmailJS:', err);
+    console.error('[HEW Groups] ❌ EmailJS delivery failed:', err);
     return { success: false, error: err };
   }
 }
@@ -545,10 +690,23 @@ async function handleFormSubmission(form) {
   submitBtn.disabled = true;
 
   const formData = new FormData(form);
-  const name = formData.get('name') || 'Member';
-  const phone = formData.get('phone') || '+91 98765 43210';
-  const email = formData.get('email') || 'member@example.com';
-  const focus = formData.get('focus') || 'Health, Education & Wealth';
+  const nameInput = form.querySelector('input[name="name"]') || form.querySelector('input[type="text"]');
+  const phoneInput = form.querySelector('input[name="phone"]') || form.querySelector('input[type="tel"]');
+  const emailInput = form.querySelector('input[name="email"]') || form.querySelector('input[type="email"]');
+  const focusInput = form.querySelector('select[name="focus"]') || form.querySelector('select');
+
+  const name = (nameInput ? nameInput.value.trim() : formData.get('name')) || 'Member';
+  const phone = (phoneInput ? phoneInput.value.trim() : formData.get('phone')) || '+91 98765 43210';
+  const email = (emailInput ? emailInput.value.trim() : formData.get('email')) || '';
+  const focus = (focusInput ? focusInput.value : formData.get('focus')) || 'Complete Transformation (H + E + W)';
+
+  if (!email || !email.includes('@')) {
+    alert('Please enter a valid email address to receive your Masterclass Guide.');
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = originalHtml;
+    if (emailInput) emailInput.focus();
+    return;
+  }
 
   // =========================================================================
   // ZERO-RUPEES TEST MODE (amountINR === 0)
@@ -556,7 +714,7 @@ async function handleFormSubmission(form) {
   // and immediately triggers EmailJS Masterclass Document delivery.
   // =========================================================================
   if (PAYMENT_CONFIG.amountINR === 0) {
-    submitBtn.innerHTML = `<span>Processing Test Access & Emailing Document...</span>`;
+    submitBtn.innerHTML = `<span>Enrolling & Sending Email...</span>`;
 
     const ticketData = {
       name,
@@ -569,14 +727,12 @@ async function handleFormSubmission(form) {
     };
 
     // Dispatch automated confirmation email with document via EmailJS
-    await sendMasterclassEmail(ticketData);
+    const emailResult = await sendMasterclassEmail(ticketData);
 
-    setTimeout(() => {
-      submitBtn.disabled = false;
-      submitBtn.innerHTML = originalHtml;
-      form.reset();
-      showConfirmationTicket(ticketData);
-    }, 700);
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = originalHtml;
+    form.reset();
+    showConfirmationTicket(ticketData, emailResult);
     return;
   }
 
@@ -584,10 +740,11 @@ async function handleFormSubmission(form) {
   // LIVE PAID CHECKOUT (e.g. ₹199 via Razorpay)
   // =========================================================================
   submitBtn.innerHTML = `<span>Connecting to Razorpay...</span>`;
+  await envReadyPromise;
   await ensureRazorpayLoaded();
 
   // If Razorpay SDK not available or test placeholder key
-  if (!window.Razorpay || PAYMENT_CONFIG.key === 'rzp_test_YOUR_KEY_HERE') {
+  if (!window.Razorpay || !PAYMENT_CONFIG.key || PAYMENT_CONFIG.key.includes('YOUR_KEY') || PAYMENT_CONFIG.key === 'rzp_test_YOUR_KEY_HERE') {
     console.info('[HEW Groups] Razorpay Key pending or unavailable. Running fallback simulation.');
     setTimeout(async () => {
       submitBtn.disabled = false;
@@ -604,8 +761,8 @@ async function handleFormSubmission(form) {
         amountPaid: '₹' + PAYMENT_CONFIG.amountINR
       };
 
-      await sendMasterclassEmail(ticketData);
-      showConfirmationTicket(ticketData);
+      const emailResult = await sendMasterclassEmail(ticketData);
+      showConfirmationTicket(ticketData, emailResult);
     }, 900);
     return;
   }
@@ -644,9 +801,9 @@ async function handleFormSubmission(form) {
       };
 
       // Trigger automated email with Masterclass Document via EmailJS
-      await sendMasterclassEmail(ticketData);
+      const emailResult = await sendMasterclassEmail(ticketData);
 
-      showConfirmationTicket(ticketData);
+      showConfirmationTicket(ticketData, emailResult);
     },
     modal: {
       ondismiss: function () {
@@ -671,7 +828,7 @@ async function handleFormSubmission(form) {
   }
 }
 
-function showConfirmationTicket(data) {
+function showConfirmationTicket(data, emailResult) {
   const modal = document.getElementById('booking-modal') || document.getElementById('bookingModal');
   if (!modal) return;
 
@@ -690,28 +847,29 @@ function showConfirmationTicket(data) {
 
   if (!modalBody) return;
 
-  const docUrl = getMasterclassDocumentUrl();
   const whatsappUrl = EMAILJS_CONFIG.whatsappGroupUrl;
+  const isMailSent = emailResult && emailResult.success;
+  const mailErrorMsg = emailResult && emailResult.error ? (typeof emailResult.error === 'string' ? emailResult.error : (emailResult.error.text || emailResult.error.message || '')) : '';
 
   modalBody.innerHTML = `
     <div style="text-align: center;">
       <div style="width: 56px; height: 56px; border-radius: 50%; background: rgba(9, 100, 16, 0.12); border: 1.5px solid var(--health); color: var(--health); display: grid; place-items: center; margin: 0 auto 1.25rem auto;">
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
       </div>
-      <span style="font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; color: var(--health); text-transform: uppercase;">Payment Confirmed</span>
+      <span style="font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; color: var(--health); text-transform: uppercase;">Registration Confirmed</span>
       <h3 style="font-family: var(--font-heading); font-size: 1.85rem; color: var(--text-main); margin-top: 0.35rem; font-weight: 700;">VIP Access Pass Issued</h3>
-      <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.35rem;">Welcome, <strong>${escapeHtml(data.name)}</strong>. Your payment of <strong>${data.amountPaid}</strong> is confirmed.</p>
+      <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.35rem;">Welcome, <strong>${escapeHtml(data.name)}</strong>. Your pass for <strong>${data.amountPaid}</strong> is confirmed.</p>
     </div>
 
-    <!-- Automated Mail Delivery Notification Banner -->
-    <div style="background: rgba(9, 100, 16, 0.08); border: 1px solid rgba(9, 100, 16, 0.25); border-radius: 12px; padding: 12px 16px; margin: 1rem 0; text-align: left; display: flex; align-items: flex-start; gap: 12px;">
+    <!-- Automated Mail Delivery Notification Banner (Document delivered exclusively to email) -->
+    <div style="background: rgba(9, 100, 16, 0.08); border: 1px solid rgba(9, 100, 16, 0.25); border-radius: 12px; padding: 14px 16px; margin: 1rem 0; text-align: left; display: flex; align-items: flex-start; gap: 12px;">
       <div style="color: var(--health); font-size: 1.25rem; flex-shrink: 0; margin-top: 2px;">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
       </div>
       <div>
-        <strong style="display: block; font-size: 0.88rem; color: var(--text-main); font-weight: 700;">Sent Exclusively To Your Email!</strong>
-        <span style="font-size: 0.78rem; color: var(--text-muted); line-height: 1.4; display: block; margin-top: 2px;">
-          Your official <strong>Masterclass Document &amp; Guide (PDF)</strong> has been sent directly to <span style="color: var(--health); font-weight: 600;">${escapeHtml(data.email)}</span>. Please check your inbox (and spam folder).
+        <strong style="display: block; font-size: 0.9rem; color: var(--text-main); font-weight: 700;">Sent Exclusively To Your Email!</strong>
+        <span style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.45; display: block; margin-top: 3px;">
+          Your official <strong>Masterclass Document &amp; Guide (PDF)</strong> has been sent directly to <span style="color: var(--health); font-weight: 600;">${escapeHtml(data.email)}</span>. Please check your inbox (and spam folder) to download your exclusive copy.
         </span>
       </div>
     </div>
@@ -873,16 +1031,16 @@ function openBookingModal() {
       </div>
       <button type="submit" id="btn-razorpay-submit" class="btn-primary" style="width: 100%; margin-top: 0.75rem; height: 54px; font-size: 1.05rem; display: flex; align-items: center; justify-content: center; gap: 8px;">
         ${isZeroCost
-          ? `<span><s style="opacity: 0.65; margin-right: 6px; text-decoration: line-through;">₹${PAYMENT_CONFIG.originalPriceINR}</s> <strong>Enroll for ₹0/- (Test Pass)</strong></span>`
-          : `<span><s style="opacity: 0.65; margin-right: 6px; text-decoration: line-through;">₹${PAYMENT_CONFIG.originalPriceINR}</s> <strong>Pay ₹${PAYMENT_CONFIG.amountINR}/-</strong></span>`
-        }
+      ? `<span><s style="opacity: 0.65; margin-right: 6px; text-decoration: line-through;">₹${PAYMENT_CONFIG.originalPriceINR}</s> <strong>Enroll for ₹0/- (Test Pass)</strong></span>`
+      : `<span><s style="opacity: 0.65; margin-right: 6px; text-decoration: line-through;">₹${PAYMENT_CONFIG.originalPriceINR}</s> <strong>Pay ₹${PAYMENT_CONFIG.amountINR}/-</strong></span>`
+    }
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
       </button>
       <p class="form-note" style="display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 0.65rem;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-        ${isZeroCost 
-          ? 'Free Test Registration · Masterclass Document Sent Exclusively to Email' 
-          : '100% Secure Checkout via Razorpay · Masterclass Document Sent Exclusively to Email'}
+        ${isZeroCost
+      ? 'Free Test Registration · Masterclass Document Sent Exclusively to Email'
+      : '100% Secure Checkout via Razorpay · Masterclass Document Sent Exclusively to Email'}
       </p>
     </form>
   `;
@@ -1126,7 +1284,7 @@ function initVideoMarqueeEngine() {
         playPromise.catch(() => {
           // Fallback: start playback on first touch/interaction if browser blocked autoplay
           const startOnInteract = () => {
-            v.play().catch(() => {});
+            v.play().catch(() => { });
             window.removeEventListener('pointerdown', startOnInteract);
             window.removeEventListener('touchstart', startOnInteract);
           };
@@ -1138,7 +1296,7 @@ function initVideoMarqueeEngine() {
       // Safety restart to guarantee continuous start-to-end loop
       v.addEventListener('ended', () => {
         v.currentTime = 0;
-        v.play().catch(() => {});
+        v.play().catch(() => { });
       });
     });
   }
@@ -1148,7 +1306,7 @@ function initVideoMarqueeEngine() {
       entries.forEach(entry => {
         if (entry.isIntersecting) {
           startPlayback();
-          allVideos.forEach(v => v.play().catch(() => {}));
+          allVideos.forEach(v => v.play().catch(() => { }));
         } else if (videosInitialized) {
           // Pause when completely offscreen to save battery and network bandwidth
           allVideos.forEach(v => v.pause());
@@ -1179,7 +1337,7 @@ function initVideoMarqueeEngine() {
     if (video) {
       video.muted = false;
       video.volume = 1.0;
-      video.play().catch(() => {});
+      video.play().catch(() => { });
       card.classList.add('is-active-sound');
       updateAudioButton(card, true);
     }

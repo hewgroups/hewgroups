@@ -14,3 +14,12 @@ testimomonials/
 # Local backups
 *.backup.*
 *.original.*
+
+# Sensitive Environment Variables and Local Credentials
+.env
+.env.local
+.env.*.local
+*.env
+js/env.js
+js/env-config.js
+
