@@ -773,7 +773,7 @@ async function handleFormSubmission(form) {
   const cleanPhone = phone.replace(/[^\d+]/g, '');
   let orderId = '';
 
-  // Attempt server-side Order creation (Required by Razorpay Standard Checkout)
+  // Attempt server-side Order creation (Required by Razorpay Standard Checkout in Live Mode)
   try {
     const orderRes = await fetch('/api/create-order', {
       method: 'POST',
@@ -786,31 +786,43 @@ async function handleFormSubmission(form) {
         focus: focus
       })
     });
-    if (orderRes.ok) {
-      const orderData = await orderRes.json();
-      if (orderData.order_id) {
-        orderId = orderData.order_id;
+
+    const resJson = await orderRes.json().catch(() => ({}));
+    if (orderRes.ok && resJson.order_id) {
+      orderId = resJson.order_id;
+      if (resJson.key) {
+        PAYMENT_CONFIG.key = resJson.key;
       }
     } else {
-      const errData = await orderRes.json().catch(() => ({}));
-      console.warn('[HEW Groups] Order creation notice:', errData);
+      const errorMsg = resJson.error || 'Server could not create Razorpay order.';
+      console.error('[HEW Groups] Razorpay order creation failed:', resJson);
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = originalHtml;
+      alert('Payment Error: ' + errorMsg);
+      return;
     }
   } catch (e) {
-    console.warn('[HEW Groups] Order API offline/local notice:', e);
+    console.error('[HEW Groups] Order API network error:', e);
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = originalHtml;
+    alert('Payment Network Error: Could not connect to order server. Please check your connection and try again.');
+    return;
   }
 
-  const logoUrl = window.location.origin && window.location.origin !== 'null'
-    ? `${window.location.origin}/assets/logo/HEW-Groups_32x32.png`
-    : 'https://www.hewgroups.com/assets/logo/HEW-Groups_32x32.png';
+  if (!orderId) {
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = originalHtml;
+    alert('Payment Error: Missing Razorpay Order ID. Please check server configuration.');
+    return;
+  }
 
   const options = {
     key: PAYMENT_CONFIG.key,
-    amount: PAYMENT_CONFIG.amountINR * 100, // paise (e.g. 199 * 100 = 19900)
+    amount: PAYMENT_CONFIG.amountINR * 100, // paise (e.g. 1 * 100 = 100 paise)
     currency: PAYMENT_CONFIG.currency,
     name: PAYMENT_CONFIG.name,
     description: PAYMENT_CONFIG.description,
-    image: logoUrl,
-    order_id: orderId || undefined,
+    order_id: orderId,
     prefill: {
       name: name,
       email: email,
@@ -863,6 +875,7 @@ async function handleFormSubmission(form) {
     submitBtn.disabled = false;
     submitBtn.innerHTML = originalHtml;
     console.error('Razorpay invocation error:', err);
+    alert('Payment Gateway Error: ' + (err.message || 'Could not open Razorpay checkout.'));
   }
 }
 
@@ -1078,7 +1091,7 @@ function openBookingModal() {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
         ${isZeroCost
       ? 'Free Test Registration · Masterclass Document Sent Exclusively to Email'
-      : '100% Secure Checkout via Razorpay · Masterclass Document Sent Exclusively to Email'}
+      : '100% Secure Checkout via Razorpay '}
       </p>
     </form>
   `;

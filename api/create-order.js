@@ -1,6 +1,26 @@
 // Vercel Serverless Function: Creates Razorpay Order securely using Orders API
 const https = require('https');
 
+async function parseBody(req) {
+  if (req.body) {
+    if (typeof req.body === 'string') {
+      try { return JSON.parse(req.body); } catch (e) { return {}; }
+    }
+    return req.body;
+  }
+  if (req.readableEnded) {
+    return {};
+  }
+  return new Promise((resolve) => {
+    let data = '';
+    req.on('data', chunk => { data += chunk; });
+    req.on('end', () => {
+      try { resolve(JSON.parse(data || '{}')); } catch (e) { resolve({}); }
+    });
+    req.on('error', () => resolve({}));
+  });
+}
+
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -14,17 +34,7 @@ module.exports = async (req, res) => {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  // Parse request body
-  let body = req.body;
-  if (typeof body === 'string') {
-    try {
-      body = JSON.parse(body);
-    } catch (e) {
-      body = {};
-    }
-  }
-  body = body || {};
-
+  const body = await parseBody(req);
   const amountINR = Number(body.amountINR) || 1;
   const amountPaise = Math.round(amountINR * 100);
 
@@ -47,19 +57,14 @@ module.exports = async (req, res) => {
   const keyId = getVar(['RAZORPAY_KEY_ID', 'RAZORPAY_KEY', 'RZP_KEY', 'NEXT_PUBLIC_RAZORPAY_KEY_ID']) || 'rzp_live_TrmHqpHyg2ZHZJ';
   const keySecret = getVar(['RAZORPAY_KEY_SECRET', 'RAZORPAY_SECRET', 'KEY_SECRET', 'RZP_SECRET']) || 'u4usNRIV0EZpUAIYRHEriNXm';
 
-  if (!keyId || !keySecret) {
-    return res.status(500).json({ error: 'Razorpay API credentials not configured.' });
-  }
-
   const payload = JSON.stringify({
     amount: amountPaise,
     currency: 'INR',
-    receipt: 'rcpt_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6),
+    receipt: 'rcpt_' + Date.now().toString(36),
     notes: {
       name: body.name || 'Member',
       email: body.email || '',
-      phone: body.phone || '',
-      focus: body.focus || 'Complete Transformation'
+      batch: 'Batch #1'
     }
   });
 
@@ -89,14 +94,15 @@ module.exports = async (req, res) => {
             });
           } else {
             console.error('[Razorpay Order Error]', rzpRes.statusCode, rawData);
+            const errDesc = json.error ? (json.error.description || json.error.message || json.error.code) : rawData;
             res.status(rzpRes.statusCode || 500).json({
               success: false,
-              error: json.error ? (json.error.description || json.error.message) : 'Failed to create order on Razorpay',
-              raw: json
+              error: errDesc,
+              details: json
             });
           }
         } catch (err) {
-          res.status(500).json({ success: false, error: 'Invalid response from Razorpay API' });
+          res.status(500).json({ success: false, error: 'Invalid response from Razorpay: ' + rawData });
         }
         resolve();
       });
@@ -112,4 +118,3 @@ module.exports = async (req, res) => {
     rzpReq.end();
   });
 };
-
