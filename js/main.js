@@ -403,7 +403,7 @@ function initRegistrationForms() {
 const PAYMENT_CONFIG = {
   // SET TO 1 FOR TESTING (Charges ₹1 via Razorpay test/live gateway)
   // CHANGE TO 199 FOR LIVE PRODUCTION (Charges ₹199 via Razorpay)
-  amountINR: 1, 
+  amountINR: 1,
   originalPriceINR: 499,
 
   // Razorpay Gateway Settings (Active when amountINR > 0)
@@ -768,17 +768,53 @@ async function handleFormSubmission(form) {
   }
 
   // Live/Test Razorpay Checkout integration
+  submitBtn.innerHTML = `<span>Connecting to Razorpay...</span>`;
+
+  const cleanPhone = phone.replace(/[^\d+]/g, '');
+  let orderId = '';
+
+  // Attempt server-side Order creation (Required by Razorpay Standard Checkout)
+  try {
+    const orderRes = await fetch('/api/create-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        amountINR: PAYMENT_CONFIG.amountINR,
+        name: name,
+        email: email,
+        phone: cleanPhone,
+        focus: focus
+      })
+    });
+    if (orderRes.ok) {
+      const orderData = await orderRes.json();
+      if (orderData.order_id) {
+        orderId = orderData.order_id;
+      }
+    } else {
+      const errData = await orderRes.json().catch(() => ({}));
+      console.warn('[HEW Groups] Order creation notice:', errData);
+    }
+  } catch (e) {
+    console.warn('[HEW Groups] Order API offline/local notice:', e);
+  }
+
+  const logoUrl = window.location.origin && window.location.origin !== 'null'
+    ? `${window.location.origin}/assets/logo/HEW-Groups_32x32.png`
+    : 'https://www.hewgroups.com/assets/logo/HEW-Groups_32x32.png';
+
   const options = {
     key: PAYMENT_CONFIG.key,
     amount: PAYMENT_CONFIG.amountINR * 100, // paise (e.g. 199 * 100 = 19900)
     currency: PAYMENT_CONFIG.currency,
     name: PAYMENT_CONFIG.name,
     description: PAYMENT_CONFIG.description,
-    image: PAYMENT_CONFIG.image,
+    image: logoUrl,
+    order_id: orderId || undefined,
     prefill: {
       name: name,
       email: email,
-      contact: phone
+      contact: cleanPhone
     },
     notes: {
       focus_area: focus,
@@ -796,7 +832,7 @@ async function handleFormSubmission(form) {
         email,
         focus,
         ticketId: 'HEW-' + Math.floor(100000 + Math.random() * 900000),
-        paymentId: response.razorpay_payment_id,
+        paymentId: response.razorpay_payment_id || response.razorpay_order_id,
         amountPaid: '₹' + PAYMENT_CONFIG.amountINR
       };
 
@@ -818,7 +854,9 @@ async function handleFormSubmission(form) {
     rzp.on('payment.failed', function (response) {
       submitBtn.disabled = false;
       submitBtn.innerHTML = originalHtml;
-      alert('Payment could not be completed: ' + (response.error.description || 'Please try again.'));
+      const desc = response.error ? (response.error.description || response.error.reason || 'Payment could not be completed.') : 'Payment cancelled or failed.';
+      console.warn('[Razorpay Payment Failed]', response);
+      alert('Payment Note: ' + desc);
     });
     rzp.open();
   } catch (err) {
@@ -856,8 +894,8 @@ function showConfirmationTicket(data, emailResult) {
       <div style="width: 56px; height: 56px; border-radius: 50%; background: rgba(9, 100, 16, 0.12); border: 1.5px solid var(--health); color: var(--health); display: grid; place-items: center; margin: 0 auto 1.25rem auto;">
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
       </div>
-      <span style="font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; color: var(--health); text-transform: uppercase;">Registration Confirmed</span>
-      <h3 style="font-family: var(--font-heading); font-size: 1.85rem; color: var(--text-main); margin-top: 0.35rem; font-weight: 700;">VIP Access Pass Issued</h3>
+      <span style="font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; color: var(--health); text-transform: uppercase;">Registration Confirmed !!</span>
+      <h3 style="font-family: var(--font-heading); font-size: 1.85rem; color: var(--text-main); margin-top: 0.35rem; font-weight: 700;">Access Issued </h3>
       <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.35rem;">Welcome, <strong>${escapeHtml(data.name)}</strong>. Your pass for <strong>${data.amountPaid}</strong> is confirmed.</p>
     </div>
 
@@ -907,7 +945,7 @@ function showConfirmationTicket(data, emailResult) {
       <!-- Updated Live VIP WhatsApp Group Link -->
       <a href="${whatsappUrl}" target="_blank" rel="noopener" class="btn-primary" style="background: #25D366; box-shadow: 0 10px 25px rgba(37, 211, 102, 0.35); text-align: center; border: none; display: flex; align-items: center; justify-content: center; gap: 8px;">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z"/></svg>
-        Join Batch #1 VIP WhatsApp Group
+        Join WhatsApp Group
       </a>
 
       <button id="btn-add-calendar" class="btn-secondary" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;">
