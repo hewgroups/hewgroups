@@ -438,20 +438,29 @@ function applyAppConfig(env) {
   if (!env || typeof env !== 'object') return;
   const clean = (val) => (typeof val === 'string' ? val.trim().replace(/^['"]|['"]$/g, '') : '');
 
+  function isRealKey(val) {
+    if (!val || typeof val !== 'string') return false;
+    const lower = val.toLowerCase();
+    if (lower.includes('your_') || lower.includes('_here') || lower.includes('placeholder') || lower.includes('example')) {
+      return false;
+    }
+    return true;
+  }
+
   const rzpKey = clean(env.RAZORPAY_KEY_ID);
-  if (rzpKey && !rzpKey.includes('YOUR_')) {
+  if (rzpKey && isRealKey(rzpKey) && rzpKey.startsWith('rzp_')) {
     PAYMENT_CONFIG.key = rzpKey;
   }
   const pubKey = clean(env.EMAILJS_PUBLIC_KEY);
-  if (pubKey && !pubKey.includes('YOUR_')) {
+  if (pubKey && isRealKey(pubKey)) {
     EMAILJS_CONFIG.publicKey = pubKey;
   }
   const srvId = clean(env.EMAILJS_SERVICE_ID);
-  if (srvId && !srvId.includes('YOUR_')) {
+  if (srvId && isRealKey(srvId)) {
     EMAILJS_CONFIG.serviceId = srvId;
   }
   const tmplId = clean(env.EMAILJS_TEMPLATE_ID);
-  if (tmplId && !tmplId.includes('YOUR_')) {
+  if (tmplId && isRealKey(tmplId)) {
     EMAILJS_CONFIG.templateId = tmplId;
   }
 }

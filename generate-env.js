@@ -20,15 +20,24 @@ if (fs.existsSync(envPath)) {
   }
 }
 
+function isRealKey(val) {
+  if (!val || typeof val !== 'string') return false;
+  const v = val.trim().toLowerCase();
+  if (v.includes('your_') || v.includes('_here') || v.includes('placeholder') || v.includes('example')) {
+    return false;
+  }
+  return true;
+}
+
 function getVar(aliases) {
   for (const key of aliases) {
-    if (process.env[key]) return process.env[key].trim().replace(/^['"]|['"]$/g, '');
+    if (process.env[key] && isRealKey(process.env[key])) return process.env[key].trim().replace(/^['"]|['"]$/g, '');
   }
   const envKeys = Object.keys(process.env);
   for (const alias of aliases) {
     const lower = alias.toLowerCase().replace(/[^a-z0-9]/g, '');
     for (const k of envKeys) {
-      if (k.toLowerCase().replace(/[^a-z0-9]/g, '') === lower && process.env[k]) {
+      if (k.toLowerCase().replace(/[^a-z0-9]/g, '') === lower && process.env[k] && isRealKey(process.env[k])) {
         return process.env[k].trim().replace(/^['"]|['"]$/g, '');
       }
     }
